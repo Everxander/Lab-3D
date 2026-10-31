@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laboratorio 3D: Globo y Electricidad Estática</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- OrbitControls -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            background-color: #080d1a;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+            touch-action: none;
+        }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .explanation-modal {
+            transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1), 
+                        opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+                        backdrop-filter 0.8s ease;
+        }
+        .explanation-modal.hidden-modal {
+            opacity: 0;
+            pointer-events: none !important;
+            transform: scale(0.95) translateY(12px);
+        }
+        .explanation-modal.visible-modal {
+            opacity: 1;
+            pointer-events: auto !important;
+            transform: scale(1) translateY(0);
+        }
+
+        .minimized-btn {
+            transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), 
+                        opacity 0.4s ease,
+                        box-shadow 0.4s ease;
+        }
+        .minimized-btn.hidden-btn {
+            opacity: 0;
+            pointer-events: none !important;
+            transform: scale(0.8) translateY(-10px);
+        }
+        .minimized-btn.visible-btn {
+            opacity: 1;
+            pointer-events: auto !important;
+            transform: scale(1) translateY(0);
+        }
+
+        .toggle-bg {
+            transition: background-color 0.25s ease;
+        }
+        .toggle-dot {
+            transition: transform 0.25s ease;
+        }
+
+        .color-dot {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: transform 0.2s ease, border-color 0.2s ease;
+            border: 2px solid transparent;
+        }
+        .color-dot:hover {
+            transform: scale(1.2);
+        }
+        .color-dot.active {
+            border-color: #ffffff;
+            transform: scale(1.25);
+        }
+    </style>
+</head>
+<body class="text-slate-100">
+
+    <div id="canvas-container"></div>
+
+    <!-- HUD Overlay -->
+    <div class="absolute inset-0 pointer-events-none flex flex-col justify-between p-3 sm:p-6 z-10">
+        
+        <!-- Header & Telemetría -->
+        <div class="flex flex-wrap justify-between items-start gap-2 sm:gap-4">
+            <div class="glass-panel p-2.5 sm:p-4 rounded-2xl pointer-events-auto max-w-[200px] sm:max-w-xs shadow-2xl">
+                <div class="flex items-center gap-2 sm:gap-3">
+                    <div class="p-2 sm:p-3 bg-indigo-500/20 border border-indigo-500/40 rounded-xl text-indigo-400">
+                        <i class="fa-solid fa-bolt text-lg sm:text-2xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="font-bold text-xs sm:text-lg leading-tight text-white">Electricidad Estática</h1>
+                        <p class="text-[10px] sm:text-xs text-slate-300 hidden sm:block">Fricción e Inducción de Carga</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Indicador de Carga + Desplegable de Etiquetas -->
+            <div class="glass-panel p-2.5 sm:p-3 px-3 sm:px-5 rounded-2xl pointer-events-auto flex items-center gap-2 sm:gap-6 shadow-2xl relative">
+                <div class="text-center">
+                    <p class="text-[9px] sm:text-xs font-semibold text-slate-400 uppercase">Carga</p>
+                    <p id="charge-display" class="text-xs sm:text-base font-bold text-cyan-400">0 %</p>
+                </div>
+                <div class="h-6 sm:h-8 w-px bg-slate-700"></div>
+                <div class="text-center hidden sm:block">
+                    <p class="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase">Estado</p>
+                    <p id="status-display" class="text-xs font-bold text-amber-300 bg-amber-950/60 border border-amber-500/30 px-2.5 py-1 rounded-lg">Sin Carga (Frota la Gorra)</p>
+                </div>
+
+                <div class="h-6 sm:h-8 w-px bg-slate-700 hidden sm:block"></div>
+
+                <div class="relative">
+                    <button id="btn-toggle-labels-menu" class="p-1.5 sm:p-2 px-2 sm:px-3 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/40 text-[11px] sm:text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer active:scale-95">
+                        <i class="fa-solid fa-tags"></i> <span>Etiquetas</span> <i id="icon-chevron-labels" class="fa-solid fa-chevron-down text-[10px] transition-transform"></i>
+                    </button>
+
+                    <div id="dropdown-labels" class="hidden absolute right-0 top-10 sm:top-12 w-48 sm:w-56 glass-panel rounded-2xl p-3 shadow-2xl border border-indigo-500/30 flex flex-col gap-2 z-30">
+                        <div class="flex items-center justify-between pb-2 border-b border-slate-700/80 px-1">
+                            <span class="text-[10px] sm:text-[11px] font-bold text-slate-200">Visibilidad</span>
+                            <button id="btn-toggle-all-labels" class="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold">Alternar</button>
+                        </div>
+                        <div id="labels-checkbox-container" class="space-y-2 max-h-48 overflow-y-auto px-1 text-xs">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Instrucciones y Selector de Colores -->
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-2.5 pointer-events-none">
+            
+            <div class="glass-panel rounded-2xl pointer-events-auto w-full sm:w-auto sm:max-w-xs shadow-2xl overflow-hidden transition-all duration-300">
+                <button id="btn-toggle-instructions" class="w-full p-2.5 sm:p-4 flex items-center justify-between gap-2 text-left hover:bg-slate-800/40 transition">
+                    <span class="text-[11px] sm:text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <i class="fa-solid fa-hand-pointer"></i> Guía del Experimento
+                    </span>
+                    <i id="icon-chevron" class="fa-solid fa-chevron-up text-xs text-slate-400 transition-transform duration-300"></i>
+                </button>
+                
+                <div id="instructions-content" class="px-3 sm:px-4 pb-3 sm:pb-4 transition-all duration-300">
+                    <p class="text-[11px] sm:text-xs font-mono text-slate-300 leading-relaxed">
+                        1. Frota el globo sobre la gorra de algodón para cargarlo (-).<br>
+                        2. Acércalo a la lata para ver la atracción sin que se atraviesen.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Panel de Personalización de Colores -->
+            <div class="glass-panel p-3 sm:p-4 rounded-2xl pointer-events-auto w-full sm:w-80 shadow-2xl space-y-2.5">
+                
+                <!-- Color Globo -->
+                <div class="flex items-center justify-between px-1">
+                    <span class="text-[11px] sm:text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                        <i class="fa-solid fa-circle text-sky-400"></i> Globo:
+                    </span>
+                    <div class="flex items-center gap-1.5">
+                        <div class="color-dot active bg-sky-500" data-target="balloon" data-color="#0284c7" title="Azul"></div>
+                        <div class="color-dot bg-rose-500" data-target="balloon" data-color="#e11d48" title="Rosa"></div>
+                        <div class="color-dot bg-cyan-400" data-target="balloon" data-color="#22d3ee" title="Cian"></div>
+                        <div class="color-dot bg-emerald-400" data-target="balloon" data-color="#34d399" title="Verde"></div>
+                        <div class="color-dot bg-amber-400" data-target="balloon" data-color="#fbbf24" title="Ámbar"></div>
+                    </div>
+                </div>
+
+                <!-- Color Gorra -->
+                <div class="flex items-center justify-between px-1">
+                    <span class="text-[11px] sm:text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                        <i class="fa-solid fa-hat-cowboy text-blue-500"></i> Gorra:
+                    </span>
+                    <div class="flex items-center gap-1.5">
+                        <div class="color-dot active bg-blue-600" data-target="cap" data-color="#2563eb" title="Azul Rey"></div>
+                        <div class="color-dot bg-red-600" data-target="cap" data-color="#dc2626" title="Rojo"></div>
+                        <div class="color-dot bg-slate-800" data-target="cap" data-color="#1e293b" title="Negro"></div>
+                        <div class="color-dot bg-emerald-600" data-target="cap" data-color="#059669" title="Verde"></div>
+                        <div class="color-dot bg-amber-600" data-target="cap" data-color="#d97706" title="Naranja"></div>
+                    </div>
+                </div>
+
+                <button id="btn-reset-charge" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2 px-3 rounded-xl text-xs transition flex items-center justify-center gap-1.5 active:scale-95 shadow-lg shadow-indigo-600/30 border border-indigo-400/30">
+                    <i class="fa-solid fa-arrows-rotate"></i> Descargar Globo (Reset)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- BOTÓN FLOTANTE MINIMIZADO -->
+    <button id="btn-expand-minimized" class="minimized-btn hidden-btn fixed top-20 sm:top-28 right-4 sm:right-6 z-30 glass-panel p-2.5 sm:p-3 px-4 sm:px-5 rounded-2xl border border-indigo-500/50 text-indigo-300 hover:text-white hover:bg-indigo-500/20 shadow-2xl flex items-center gap-2 text-xs font-bold active:scale-95 cursor-pointer">
+        <i class="fa-solid fa-graduation-cap text-base sm:text-lg text-indigo-400"></i>
+        <span>Ver Explicación Científica</span>
+    </button>
+
+    <!-- MODAL DE EXPLICACIÓN CIENTÍFICA -->
+    <div id="completion-modal" class="explanation-modal hidden-modal fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+        <div class="glass-panel w-full max-w-lg p-5 sm:p-8 rounded-3xl shadow-2xl border border-indigo-500/30 relative flex flex-col gap-4">
+            
+            <div class="flex items-start justify-between gap-4">
+                <div class="flex items-center gap-3">
+                    <div class="p-3 rounded-2xl bg-gradient-to-br from-indigo-500/30 to-purple-600/30 border border-indigo-400/40 text-indigo-300">
+                        <i class="fa-solid fa-award text-2xl sm:text-3xl"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-base sm:text-xl font-black text-white">¡Experimento Logrado!</h2>
+                        <p class="text-xs text-indigo-400 font-medium">Electricidad Estática e Inducción</p>
+                    </div>
+                </div>
+                <button id="btn-minimize-modal" class="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition border border-slate-700 cursor-pointer">
+                    <i class="fa-solid fa-minus text-sm"></i>
+                </button>
+            </div>
+
+            <div class="space-y-3 bg-slate-900/70 p-3.5 sm:p-4 rounded-2xl border border-slate-800 text-slate-300 text-xs sm:text-sm leading-relaxed max-h-60 overflow-y-auto">
+                <p class="font-bold text-indigo-300 text-xs sm:text-sm flex items-center gap-2 border-b border-slate-800 pb-2">
+                    <i class="fa-solid fa-atom"></i> ¿Cómo funciona la atracción electrostática?
+                </p>
+
+                <div>
+                    <h4 class="font-semibold text-white text-[11px] sm:text-xs uppercase tracking-wider text-indigo-400 mb-1">1. Carga por Triboelectricidad (Fricción)</h4>
+                    <p class="text-slate-300 text-xs">
+                        Al frotar el globo sobre la gorra de algodón, el globo arranca electrones del tejido, adquiriendo una carga neta negativa (-).
+                    </p>
+                </div>
+
+                <div>
+                    <h4 class="font-semibold text-white text-[11px] sm:text-xs uppercase tracking-wider text-indigo-400 mb-1">2. Inducción Electroestática</h4>
+                    <p class="text-slate-300 text-xs">
+                        Al acercar el globo a la lata (conductor neutral), repele los electrones del aluminio hacia el lado opuesto, dejando una zona frontal con carga positiva (+).
+                    </p>
+                </div>
+
+                <div>
+                    <h4 class="font-semibold text-white text-[11px] sm:text-xs uppercase tracking-wider text-indigo-400 mb-1">3. Fuerza de Atracción y Movimiento</h4>
+                    <p class="text-slate-300 text-xs">
+                        La atracción entre la zona positiva de la lata y el globo cargado negativamente genera el torque necesario para hacerla rodar sobre la mesa.
+                    </p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3 pt-1">
+                <button id="btn-close-modal" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl text-xs transition shadow-lg flex items-center justify-center gap-2 border border-indigo-400/40 active:scale-95 cursor-pointer">
+                    <i class="fa-solid fa-check"></i> Comprendido
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let scene, camera, renderer, controls;
+        let balloonMesh, cottonCapGroup, capMaterial, canMesh;
+        let balloonShadowPlane;
+        let papers = [];
+        let raycaster, mouse, dragPlane;
+        let isDragging = false;
+        let chargeLevel = 0; 
+        let lastBalloonPos = new THREE.Vector3();
+        let experimentCompleted = false;
+
+        let targetBalloonColor = new THREE.Color(0x0284c7);
+        let targetCapColor = new THREE.Color(0x2563eb);
+
+        let canVelocityX = 0;
+        let canVelocityZ = 0;
+
+        const labelSpritesList = [];
+        let allLabelsState = true;
+
+        const BALLOON_RADIUS = 0.9;
+        const TABLE_HEIGHT = -2.0;
+
+        function renderLabelTexture(canvas, text) {
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+            ctx.beginPath();
+            ctx.roundRect(10, 10, 492, 108, 28);
+            ctx.fill();
+
+            ctx.lineWidth = 6;
+            ctx.strokeStyle = '#818cf8';
+            ctx.stroke();
+
+            ctx.fillStyle = '#818cf8';
+            ctx.beginPath();
+            ctx.arc(45, 64, 14, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.font = 'Bold 32px Inter, system-ui, sans-serif';
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 72, 65);
+        }
+
+        function createLabelCanvas(idKey, text) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 128;
+            
+            renderLabelTexture(canvas, text);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+            const sprite = new THREE.Sprite(spriteMat);
+            
+            sprite.scale.set(1.8, 0.45, 1);
+            sprite.userData = { idKey: idKey, canvas: canvas, text: text };
+            labelSpritesList.push(sprite);
+
+            return sprite;
+        }
+
+        function createCanTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, 512, 512);
+
+            ctx.fillStyle = '#4f46e5';
+            ctx.beginPath();
+            ctx.moveTo(0, 100);
+            ctx.lineTo(512, 220);
+            ctx.lineTo(512, 400);
+            ctx.lineTo(0, 280);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = '#06b6d4';
+            ctx.beginPath();
+            ctx.moveTo(0, 140);
+            ctx.lineTo(512, 260);
+            ctx.lineTo(512, 290);
+            ctx.lineTo(0, 170);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.font = '900 48px Inter, sans-serif';
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center';
+            ctx.fillText('VirtuaLab-3D', 256, 235);
+
+            ctx.font = 'Bold 24px Inter, sans-serif';
+            ctx.fillStyle = '#38bdf8';
+            ctx.fillText('ELECTRO SODA • 355 ml', 256, 420);
+
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function createBlobShadowTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256; canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+
+            const grad = ctx.createRadialGradient(128, 128, 0, 128, 128, 120);
+            grad.addColorStop(0, 'rgba(0, 0, 0, 0.85)');
+            grad.addColorStop(0.5, 'rgba(0, 0, 0, 0.45)');
+            grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 256, 256);
+
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function init() {
+            const container = document.getElementById('canvas-container');
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x080d1a);
+            scene.fog = new THREE.FogExp2(0x080d1a, 0.015);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 4.5, 14.0);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            const OrbitControlsClass = THREE.OrbitControls || window.OrbitControls;
+            controls = new OrbitControlsClass(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+            
+            const mainLight = new THREE.DirectionalLight(0xffffff, 1.4);
+            mainLight.position.set(8, 16, 10);
+            mainLight.castShadow = true;
+            mainLight.shadow.mapSize.width = 2048;
+            mainLight.shadow.mapSize.height = 2048;
+            mainLight.shadow.camera.near = 0.5;
+            mainLight.shadow.camera.far = 40;
+            mainLight.shadow.camera.left = -12;
+            mainLight.shadow.camera.right = 12;
+            mainLight.shadow.camera.top = 12;
+            mainLight.shadow.camera.bottom = -12;
+            mainLight.shadow.bias = -0.0003;
+            scene.add(mainLight);
+
+            const dragPlaneGeo = new THREE.PlaneGeometry(300, 300);
+            const dragPlaneMat = new THREE.MeshBasicMaterial({ visible: false });
+            dragPlane = new THREE.Mesh(dragPlaneGeo, dragPlaneMat);
+            scene.add(dragPlane);
+
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+
+            buildSceneObjects();
+            setupLabelControls();
+            setupInteraction();
+            setupExplanationModalEvents();
+
+            window.addEventListener('resize', onWindowResize);
+            animate();
+        }
+
+        // MODELADO DE GORRA Y VISERA INSPIRADA EN LA IMAGEN DE REFERENCIA
+        function createUnifiedCap() {
+            cottonCapGroup = new THREE.Group();
+
+            capMaterial = new THREE.MeshStandardMaterial({
+                color: 0x2563eb,
+                roughness: 0.75,
+                metalness: 0.05
+            });
+
+            const buttonMat = new THREE.MeshStandardMaterial({
+                color: 0x0f172a,
+                roughness: 0.9
+            });
+
+            // 1. Cúpula principal redonda (6 paneles)
+            const domeGeo = new THREE.SphereGeometry(1.05, 32, 24, 0, Math.PI * 2, 0, Math.PI * 0.48);
+            const dome = new THREE.Mesh(domeGeo, capMaterial);
+            dome.position.y = TABLE_HEIGHT + 0.02;
+            dome.castShadow = true;
+            dome.receiveShadow = true;
+
+            // 2. Visera arqueada inspirada en la gorra de béisbol de referencia
+            const visorShape = new THREE.Shape();
+            visorShape.moveTo(-0.95, 0);
+            visorShape.quadraticCurveTo(-0.85, 0.85, 0, 1.25);
+            visorShape.quadraticCurveTo(0.85, 0.85, 0.95, 0);
+            visorShape.quadraticCurveTo(0, 0.4, -0.95, 0);
+
+            const extrudeSettings = { 
+                depth: 0.035, 
+                bevelEnabled: true, 
+                bevelSegments: 3, 
+                steps: 1, 
+                bevelSize: 0.015, 
+                bevelThickness: 0.015 
+            };
+            const visorGeo = new THREE.ExtrudeGeometry(visorShape, extrudeSettings);
+            const visor = new THREE.Mesh(visorGeo, capMaterial);
+            
+            visor.rotation.x = Math.PI / 2 + 0.18;
+            visor.position.set(0, TABLE_HEIGHT + 0.12, 0.15);
+            visor.castShadow = true;
+            visor.receiveShadow = true;
+
+            // 3. Botón superior
+            const buttonGeo = new THREE.SphereGeometry(0.09, 16, 12);
+            const button = new THREE.Mesh(buttonGeo, buttonMat);
+            button.position.set(0, TABLE_HEIGHT + 1.05, 0);
+            button.castShadow = true;
+
+            cottonCapGroup.add(dome, visor, button);
+            return cottonCapGroup;
+        }
+
+        function createRealCanMesh() {
+            const group = new THREE.Group();
+
+            const canTex = createCanTexture();
+            const bodyMat = new THREE.MeshStandardMaterial({
+                map: canTex,
+                metalness: 0.6,
+                roughness: 0.25
+            });
+
+            const metalMat = new THREE.MeshStandardMaterial({
+                color: 0xe2e8f0,
+                metalness: 0.9,
+                roughness: 0.15
+            });
+
+            const bodyGeo = new THREE.CylinderGeometry(0.5, 0.5, 1.2, 32, 1, true);
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            body.castShadow = true;
+            body.receiveShadow = true;
+
+            const topRimGeo = new THREE.CylinderGeometry(0.44, 0.5, 0.1, 32);
+            const topRim = new THREE.Mesh(topRimGeo, metalMat);
+            topRim.position.y = 0.65;
+            topRim.castShadow = true;
+
+            const bottomRimGeo = new THREE.CylinderGeometry(0.5, 0.44, 0.1, 32);
+            const bottomRim = new THREE.Mesh(bottomRimGeo, metalMat);
+            bottomRim.position.y = -0.65;
+            bottomRim.castShadow = true;
+
+            group.add(body, topRim, bottomRim);
+            return group;
+        }
+
+        function buildSceneObjects() {
+            // Mesa Sólida
+            const tableGeo = new THREE.CylinderGeometry(11.0, 11.0, 0.4, 64);
+            const tableMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.35 });
+            const table = new THREE.Mesh(tableGeo, tableMat);
+            table.position.y = TABLE_HEIGHT - 0.2;
+            table.receiveShadow = true;
+            scene.add(table);
+
+            // GORRA DE ALGODÓN UNIFICADA
+            cottonCapGroup = createUnifiedCap();
+            cottonCapGroup.position.set(-4.8, 0, 0);
+            scene.add(cottonCapGroup);
+
+            const capLabel = createLabelCanvas("cap", "GORRA DE ALGODÓN");
+            capLabel.position.set(0, 1.3, 0);
+            cottonCapGroup.add(capLabel);
+
+            // PAPELITOS
+            const paperGeo = new THREE.BoxGeometry(0.18, 0.005, 0.18);
+            const paperMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.85 });
+            
+            for (let i = 0; i < 50; i++) {
+                const paper = new THREE.Mesh(paperGeo, paperMat);
+                const origX = (Math.random() - 0.5) * 2.5;
+                const origZ = (Math.random() - 0.5) * 2.5;
+                paper.position.set(origX, TABLE_HEIGHT + 0.01, origZ);
+                
+                paper.userData = {
+                    isAttached: false,
+                    origPos: new THREE.Vector3(origX, TABLE_HEIGHT + 0.01, origZ),
+                    offsetOnBalloon: new THREE.Vector3(),
+                    rotationOffset: new THREE.Euler(
+                        Math.random() * Math.PI,
+                        Math.random() * Math.PI,
+                        Math.random() * Math.PI
+                    )
+                };
+                paper.castShadow = true;
+                paper.receiveShadow = true;
+                scene.add(paper);
+                papers.push(paper);
+            }
+
+            const paperLabelNode = new THREE.Object3D();
+            paperLabelNode.position.set(0, TABLE_HEIGHT + 0.6, 0);
+            const paperLabel = createLabelCanvas("paper", "TROZOS DE PAPEL");
+            paperLabel.position.set(0, 0, 0);
+            paperLabelNode.add(paperLabel);
+            scene.add(paperLabelNode);
+
+            // LATA DE ALUMINIO
+            canMesh = createRealCanMesh();
+            canMesh.position.set(4.8, TABLE_HEIGHT + 0.5, 0);
+            canMesh.rotation.z = Math.PI / 2;
+            scene.add(canMesh);
+
+            const canLabel = createLabelCanvas("can", "LATA DE ALUMINIO");
+            canLabel.position.set(0, 1.3, 0);
+            canMesh.add(canLabel);
+
+            // GLOBO
+            const balloonGeo = new THREE.SphereGeometry(BALLOON_RADIUS, 32, 32);
+            balloonGeo.scale(1.0, 1.2, 1.0);
+            const balloonMat = new THREE.MeshStandardMaterial({
+                color: 0x0284c7, 
+                roughness: 0.3,
+                metalness: 0.1
+            });
+            balloonMesh = new THREE.Mesh(balloonGeo, balloonMat);
+            balloonMesh.position.set(0, 0.2, 1.5);
+            balloonMesh.castShadow = true;
+            scene.add(balloonMesh);
+
+            const blobTex = createBlobShadowTexture();
+            const shadowMat = new THREE.MeshBasicMaterial({
+                map: blobTex,
+                transparent: true,
+                opacity: 0.75,
+                depthWrite: false
+            });
+            balloonShadowPlane = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 2.4), shadowMat);
+            balloonShadowPlane.rotation.x = -Math.PI / 2;
+            balloonShadowPlane.position.y = TABLE_HEIGHT + 0.01;
+            scene.add(balloonShadowPlane);
+
+            lastBalloonPos.copy(balloonMesh.position);
+        }
+
+        function setupLabelControls() {
+            const dropdownContainer = document.getElementById('labels-checkbox-container');
+            dropdownContainer.innerHTML = '';
+
+            labelSpritesList.forEach(sprite => {
+                const item = document.createElement('div');
+                item.className = "flex items-center justify-between text-slate-300 hover:text-white select-none py-1 cursor-pointer";
+                item.innerHTML = `
+                    <span class="truncate pr-2 font-medium">${sprite.userData.text}</span>
+                    <div class="toggle-bg relative w-8 h-4 bg-emerald-500 rounded-full flex-shrink-0 p-0.5 cursor-pointer" data-key="${sprite.userData.idKey}">
+                        <div class="toggle-dot w-3 h-3 bg-white rounded-full shadow-md transform translate-x-4"></div>
+                    </div>
+                `;
+                dropdownContainer.appendChild(item);
+            });
+
+            dropdownContainer.querySelectorAll('.toggle-bg').forEach(toggleBtn => {
+                toggleBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    const key = toggleBtn.getAttribute('data-key');
+                    const targetSprite = labelSpritesList.find(s => s.userData.idKey === key);
+                    const dot = toggleBtn.querySelector('.toggle-dot');
+
+                    if (targetSprite) {
+                        targetSprite.visible = !targetSprite.visible;
+
+                        if (targetSprite.visible) {
+                            toggleBtn.classList.remove('bg-slate-700');
+                            toggleBtn.classList.add('bg-emerald-500');
+                            dot.classList.remove('translate-x-0');
+                            dot.classList.add('translate-x-4');
+                        } else {
+                            toggleBtn.classList.remove('bg-emerald-500');
+                            toggleBtn.classList.add('bg-slate-700');
+                            dot.classList.remove('translate-x-4');
+                            dot.classList.add('translate-x-0');
+                        }
+                    }
+                };
+            });
+
+            const btnMenu = document.getElementById('btn-toggle-labels-menu');
+            const dropdown = document.getElementById('dropdown-labels');
+            const chevron = document.getElementById('icon-chevron-labels');
+            const btnMinimizedExp = document.getElementById('btn-expand-minimized');
+
+            btnMenu.onclick = (e) => {
+                e.stopPropagation();
+                const isOpen = dropdown.classList.contains('hidden');
+                dropdown.classList.toggle('hidden');
+                chevron.classList.toggle('rotate-180');
+
+                if (isOpen) {
+                    btnMinimizedExp.classList.add('hidden-btn');
+                    btnMinimizedExp.classList.remove('visible-btn');
+                } else {
+                    if (experimentCompleted) {
+                        btnMinimizedExp.classList.remove('hidden-btn');
+                        btnMinimizedExp.classList.add('visible-btn');
+                    }
+                }
+            };
+
+            document.addEventListener('click', (e) => {
+                if (!dropdown.contains(e.target) && !btnMenu.contains(e.target)) {
+                    dropdown.classList.add('hidden');
+                    chevron.classList.remove('rotate-180');
+                    if (experimentCompleted) {
+                        btnMinimizedExp.classList.remove('hidden-btn');
+                        btnMinimizedExp.classList.add('visible-btn');
+                    }
+                }
+            });
+
+            document.getElementById('btn-toggle-all-labels').onclick = () => {
+                allLabelsState = !allLabelsState;
+                
+                dropdownContainer.querySelectorAll('.toggle-bg').forEach(toggleBtn => {
+                    const key = toggleBtn.getAttribute('data-key');
+                    const targetSprite = labelSpritesList.find(s => s.userData.idKey === key);
+                    const dot = toggleBtn.querySelector('.toggle-dot');
+
+                    if (targetSprite) {
+                        targetSprite.visible = allLabelsState;
+
+                        if (allLabelsState) {
+                            toggleBtn.classList.remove('bg-slate-700');
+                            toggleBtn.classList.add('bg-emerald-500');
+                            dot.classList.remove('translate-x-0');
+                            dot.classList.add('translate-x-4');
+                        } else {
+                            toggleBtn.classList.remove('bg-emerald-500');
+                            toggleBtn.classList.add('bg-slate-700');
+                            dot.classList.remove('translate-x-4');
+                            dot.classList.add('translate-x-0');
+                        }
+                    }
+                });
+            };
+
+            const colorDots = document.querySelectorAll('.color-dot');
+            colorDots.forEach(dot => {
+                dot.onclick = () => {
+                    const target = dot.getAttribute('data-target');
+                    const hexStr = dot.getAttribute('data-color');
+
+                    document.querySelectorAll(`.color-dot[data-target="${target}"]`).forEach(d => d.classList.remove('active'));
+                    dot.classList.add('active');
+
+                    if (target === 'balloon') {
+                        targetBalloonColor.setStyle(hexStr);
+                    } else if (target === 'cap') {
+                        targetCapColor.setStyle(hexStr);
+                    }
+                };
+            });
+        }
+
+        function showExplanationModal() {
+            const modal = document.getElementById('completion-modal');
+            const minimizedBtn = document.getElementById('btn-expand-minimized');
+            modal.classList.remove('hidden-modal');
+            modal.classList.add('visible-modal');
+
+            minimizedBtn.classList.remove('visible-btn');
+            minimizedBtn.classList.add('hidden-btn');
+        }
+
+        function minimizeExplanationModal() {
+            const modal = document.getElementById('completion-modal');
+            const minimizedBtn = document.getElementById('btn-expand-minimized');
+            modal.classList.remove('visible-modal');
+            modal.classList.add('hidden-modal');
+
+            minimizedBtn.classList.remove('hidden-btn');
+            minimizedBtn.classList.add('visible-btn');
+        }
+
+        function setupExplanationModalEvents() {
+            document.getElementById('btn-minimize-modal').onclick = minimizeExplanationModal;
+            document.getElementById('btn-close-modal').onclick = minimizeExplanationModal;
+            document.getElementById('btn-expand-minimized').onclick = showExplanationModal;
+        }
+
+        function checkExperimentCompletion() {
+            if (experimentCompleted) return;
+
+            const attachedCount = papers.filter(p => p.userData.isAttached).length;
+            if (chargeLevel >= 80 && attachedCount >= 12) {
+                experimentCompleted = true;
+                setTimeout(() => {
+                    showExplanationModal();
+                }, 6000);
+            }
+        }
+
+        function setupInteraction() {
+            const canvas = renderer.domElement;
+
+            function updateMouse(e) {
+                const rect = canvas.getBoundingClientRect();
+                mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+            }
+
+            canvas.addEventListener('pointerdown', (e) => {
+                updateMouse(e);
+                raycaster.setFromCamera(mouse, camera);
+                const hits = raycaster.intersectObject(balloonMesh);
+                if (hits.length > 0) {
+                    isDragging = true;
+                    controls.enabled = false;
+                    dragPlane.position.copy(balloonMesh.position);
+                    dragPlane.quaternion.copy(camera.quaternion);
+                }
+            });
+
+            canvas.addEventListener('pointermove', (e) => {
+                if (!isDragging) return;
+                updateMouse(e);
+                raycaster.setFromCamera(mouse, camera);
+                const hits = raycaster.intersectObject(dragPlane);
+                if (hits.length > 0) {
+                    const targetPos = hits[0].point;
+                    
+                    targetPos.x = Math.max(-9.5, Math.min(9.5, targetPos.x));
+                    targetPos.y = Math.max(TABLE_HEIGHT + 0.95, Math.min(6.0, targetPos.y));
+                    targetPos.z = Math.max(-8.0, Math.min(8.0, targetPos.z));
+
+                    // 1. COLISIÓN 3D CON LA GORRA
+                    const capCenter = cottonCapGroup.position.clone();
+                    capCenter.y = TABLE_HEIGHT + 0.5;
+                    const distToCap = targetPos.distanceTo(capCenter);
+                    const minCapDist = 1.45;
+
+                    if (distToCap < minCapDist) {
+                        const pushDir = new THREE.Vector3().subVectors(targetPos, capCenter).normalize();
+                        targetPos.copy(capCenter).add(pushDir.multiplyScalar(minCapDist));
+                    }
+
+                    // 2. COLISIÓN FÍSICA CILÍNDRICA-ESFÉRICA (GLOBO Y LATA)
+                    const canPos = canMesh.position.clone();
+                    const balloonRadius = BALLOON_RADIUS; // 0.9
+                    const canRadius = 0.5;                // Radio de la lata
+                    const canHalfLength = 0.6;           // Mitad de la longitud de la lata en el eje X
+
+                    const dyz = Math.sqrt(Math.pow(targetPos.y - canPos.y, 2) + Math.pow(targetPos.z - canPos.z, 2));
+                    const minSectionDist = canRadius + balloonRadius; // 1.40 unidades
+
+                    if (Math.abs(targetPos.x - canPos.x) <= canHalfLength + balloonRadius && dyz < minSectionDist) {
+                        if (dyz > 0.001) {
+                            const overlap = minSectionDist - dyz;
+                            const pushY = (targetPos.y - canPos.y) / dyz;
+                            const pushZ = (targetPos.z - canPos.z) / dyz;
+
+                            targetPos.y += pushY * overlap;
+                            targetPos.z += pushZ * overlap;
+                        } else {
+                            targetPos.y = canPos.y + minSectionDist;
+                        }
+                    }
+
+                    // Frotado y Recarga por Contacto Directo con la Gorra
+                    const capWorldPos = new THREE.Vector3();
+                    cottonCapGroup.getWorldPosition(capWorldPos);
+                    capWorldPos.y = TABLE_HEIGHT + 0.5;
+                    const distToCapSurface = targetPos.distanceTo(capWorldPos);
+
+                    if (distToCapSurface < 1.5) {
+                        const movement = targetPos.distanceTo(lastBalloonPos);
+                        if (movement > 0.02) {
+                            chargeLevel = Math.min(100, chargeLevel + movement * 15);
+                            updateTelemetryUI();
+                        }
+                    }
+
+                    balloonMesh.position.copy(targetPos);
+                    lastBalloonPos.copy(targetPos);
+                }
+            });
+
+            const stopDrag = () => {
+                isDragging = false;
+                controls.enabled = true;
+            };
+
+            canvas.addEventListener('pointerup', stopDrag);
+            canvas.addEventListener('pointercancel', stopDrag);
+
+            document.getElementById('btn-reset-charge').onclick = () => {
+                chargeLevel = 0;
+                experimentCompleted = false;
+                updateTelemetryUI();
+                minimizeExplanationModal();
+                document.getElementById('btn-expand-minimized').classList.remove('visible-btn');
+                document.getElementById('btn-expand-minimized').classList.add('hidden-btn');
+
+                papers.forEach(p => {
+                    p.userData.isAttached = false;
+                });
+            };
+
+            const btnInstructions = document.getElementById('btn-toggle-instructions');
+            const contentInstructions = document.getElementById('instructions-content');
+            const iconChevron = document.getElementById('icon-chevron');
+            let isOpen = window.innerWidth >= 640;
+
+            if (!isOpen) {
+                contentInstructions.style.display = 'none';
+                iconChevron.classList.add('rotate-180');
+            }
+
+            btnInstructions.onclick = () => {
+                isOpen = !isOpen;
+                contentInstructions.style.display = isOpen ? 'block' : 'none';
+                iconChevron.classList.toggle('rotate-180', !isOpen);
+            };
+        }
+
+        function updateElectrostastics() {
+            const bPos = balloonMesh.position;
+            const forceRatio = chargeLevel / 100;
+
+            if (balloonShadowPlane) {
+                balloonShadowPlane.position.x = bPos.x;
+                balloonShadowPlane.position.z = bPos.z;
+
+                const heightFromGround = bPos.y - (TABLE_HEIGHT + 0.01);
+                const opacityFactor = Math.max(0, 1 - (heightFromGround / 4.2));
+                const scaleFactor = 1 + (heightFromGround * 0.35);
+
+                balloonShadowPlane.material.opacity = 0.75 * opacityFactor;
+                balloonShadowPlane.scale.set(scaleFactor, scaleFactor, 1);
+            }
+
+            // ADHESIÓN DE PAPELES
+            papers.forEach(paper => {
+                const distToCenter = paper.position.distanceTo(bPos);
+
+                if (chargeLevel > 5 && !paper.userData.isAttached && distToCenter < 2.5 * forceRatio) {
+                    const dir = new THREE.Vector3().subVectors(paper.position, bPos).normalize();
+                    if (dir.length() === 0) dir.set(0, -1, 0);
+
+                    paper.userData.offsetOnBalloon.copy(dir).multiplyScalar(BALLOON_RADIUS + 0.05);
+                    paper.userData.isAttached = true;
+                }
+
+                if (paper.userData.isAttached) {
+                    if (chargeLevel <= 5) {
+                        paper.userData.isAttached = false;
+                    } else {
+                        const targetPos = new THREE.Vector3().addVectors(bPos, paper.userData.offsetOnBalloon);
+                        paper.position.lerp(targetPos, 0.25);
+                        paper.rotation.copy(paper.userData.rotationOffset);
+                    }
+                } else {
+                    if (paper.position.y > paper.userData.origPos.y) {
+                        paper.position.y -= 0.06;
+                        paper.position.x += (paper.userData.origPos.x - paper.position.x) * 0.05;
+                        paper.position.z += (paper.userData.origPos.z - paper.position.z) * 0.05;
+                    } else {
+                        paper.position.copy(paper.userData.origPos);
+                    }
+                }
+            });
+
+            // FÍSICA HORIZONTAL DE LA LATA
+            if (chargeLevel > 5) {
+                const canFlatPos = new THREE.Vector2(canMesh.position.x, canMesh.position.z);
+                const balloonFlatPos = new THREE.Vector2(bPos.x, bPos.z);
+                const distFlat = canFlatPos.distanceTo(balloonFlatPos);
+
+                if (distFlat < 4.0 * forceRatio && distFlat > 0.45) {
+                    const dirFlat = new THREE.Vector2().subVectors(balloonFlatPos, canFlatPos).normalize();
+                    const acceleration = 0.0018 * forceRatio;
+
+                    canVelocityX += dirFlat.x * acceleration;
+                    canVelocityZ += dirFlat.y * acceleration;
+                }
+            }
+
+            canMesh.position.x += canVelocityX;
+            canMesh.position.z += canVelocityZ;
+            canMesh.position.y = TABLE_HEIGHT + 0.5;
+
+            canMesh.rotation.y = 0;
+            canMesh.rotation.z = Math.PI / 2;
+
+            canVelocityX *= 0.93;
+            canVelocityZ *= 0.93;
+
+            const speedMagnitude = Math.sqrt(canVelocityX * canVelocityX + canVelocityZ * canVelocityZ);
+            if (speedMagnitude > 0.001) {
+                canMesh.rotation.x += canVelocityZ * 1.5;
+            }
+
+            canMesh.position.x = Math.max(-8.5, Math.min(8.5, canMesh.position.x));
+            canMesh.position.z = Math.max(-8.5, Math.min(8.5, canMesh.position.z));
+
+            checkExperimentCompletion();
+        }
+
+        function updateTelemetryUI() {
+            const chargeDisp = document.getElementById('charge-display');
+            const statusDisp = document.getElementById('status-display');
+
+            const val = Math.round(chargeLevel);
+            chargeDisp.innerText = `${val} %`;
+
+            if (val > 70) {
+                statusDisp.innerText = '¡Carga Máxima Negativa (-)!';
+                statusDisp.className = 'text-xs font-bold text-emerald-300 bg-emerald-950/80 border border-emerald-500/50 px-2.5 py-1 rounded-lg animate-pulse';
+            } else if (val > 20) {
+                statusDisp.innerText = 'Cargado Electrostáticamente';
+                statusDisp.className = 'text-xs font-bold text-cyan-300 bg-cyan-950/60 border border-cyan-500/30 px-2.5 py-1 rounded-lg';
+            } else {
+                statusDisp.innerText = 'Sin Carga (Frota la Gorra)';
+                statusDisp.className = 'text-xs font-bold text-amber-300 bg-amber-950/60 border border-amber-500/30 px-2.5 py-1 rounded-lg';
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+
+            if (balloonMesh) {
+                balloonMesh.material.color.lerp(targetBalloonColor, 0.08);
+            }
+            if (capMaterial) {
+                capMaterial.color.lerp(targetCapColor, 0.08);
+            }
+
+            updateElectrostastics();
+            renderer.render(scene, camera);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>

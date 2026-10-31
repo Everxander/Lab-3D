@@ -1,0 +1,1138 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laboratorio 3D: Arcoíris Caminante Interactivo</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Three.js Visual Engine -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- OrbitControls -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            background-color: #030712;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+            touch-action: none;
+        }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .explanation-modal {
+            transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1), 
+                        opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+                        backdrop-filter 0.8s ease;
+        }
+        .explanation-modal.hidden-modal {
+            opacity: 0;
+            pointer-events: none !important;
+            transform: scale(0.95) translateY(12px);
+        }
+        .explanation-modal.visible-modal {
+            opacity: 1;
+            pointer-events: auto !important;
+            transform: scale(1) translateY(0);
+        }
+
+        .minimized-btn {
+            transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), 
+                        opacity 0.4s ease,
+                        box-shadow 0.4s ease;
+        }
+        .minimized-btn.hidden-btn {
+            opacity: 0;
+            pointer-events: none !important;
+            transform: scale(0.8) translateY(-10px);
+        }
+        .minimized-btn.visible-btn {
+            opacity: 1;
+            pointer-events: auto !important;
+            transform: scale(1) translateY(0);
+        }
+
+        .color-dot {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: transform 0.2s ease, border-color 0.2s ease;
+            border: 2px solid transparent;
+        }
+        .color-dot:hover {
+            transform: scale(1.2);
+        }
+        .color-dot.active {
+            border-color: #ffffff;
+            transform: scale(1.2);
+        }
+
+        .toggle-bg {
+            transition: background-color 0.25s ease;
+        }
+        .toggle-dot {
+            transition: transform 0.25s ease;
+        }
+    </style>
+</head>
+<body class="text-slate-100">
+
+    <div id="canvas-container"></div>
+
+    <!-- HUD Overlay -->
+    <div class="absolute inset-0 pointer-events-none flex flex-col justify-between p-4 sm:p-6 z-10">
+        
+        <!-- Header + Panel Mediciones Superior -->
+        <div class="flex flex-wrap justify-between items-start gap-4">
+            <div class="glass-panel p-4 rounded-2xl pointer-events-auto max-w-xs sm:max-w-sm shadow-2xl">
+                <div class="flex items-center gap-3">
+                    <div class="p-3 bg-indigo-500/20 border border-indigo-500/40 rounded-xl text-indigo-400">
+                        <i class="fa-solid fa-flask-vial text-2xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="font-bold text-base sm:text-lg leading-tight text-white">Arcoíris Caminante</h1>
+                        <p class="text-xs text-slate-300">Laboratorio 3D Interactivo Ultra HD</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Medición de Vasos y Botón Selector de Etiquetas -->
+            <div class="glass-panel p-3 px-5 rounded-2xl pointer-events-auto flex justify-around items-center gap-5 shadow-2xl relative">
+                <div class="text-center">
+                    <span class="text-[10px] uppercase tracking-wider font-bold text-rose-400 block">Vaso 1</span>
+                    <span id="vol-1" class="text-sm font-black text-rose-400">0 ml</span>
+                    <span id="color-1-lbl" class="text-[9px] text-slate-500 block">Vacío</span>
+                </div>
+                <div class="h-6 w-px bg-slate-700"></div>
+                <div class="text-center">
+                    <span class="text-[10px] uppercase tracking-wider font-bold text-purple-400 block">Vaso 2 (Centro)</span>
+                    <span id="vol-2" class="text-sm font-black text-purple-400">0 ml</span>
+                    <span id="color-2-lbl" class="text-[9px] text-slate-500 block">Vacío</span>
+                </div>
+                <div class="h-6 w-px bg-slate-700"></div>
+                <div class="text-center">
+                    <span class="text-[10px] uppercase tracking-wider font-bold text-blue-400 block">Vaso 3</span>
+                    <span id="vol-3" class="text-sm font-black text-blue-400">0 ml</span>
+                    <span id="color-3-lbl" class="text-[9px] text-slate-500 block">Vacío</span>
+                </div>
+                <div class="h-6 w-px bg-slate-700"></div>
+                
+                <!-- BOTÓN DESPLEGABLE DE ETIQUETAS -->
+                <div class="relative">
+                    <button id="btn-toggle-labels-menu" class="p-2 px-3 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/40 text-xs font-semibold transition flex items-center gap-2 cursor-pointer active:scale-95">
+                        <i class="fa-solid fa-tags"></i> <span>Etiquetas 3D</span> <i id="icon-chevron-labels" class="fa-solid fa-chevron-down text-[10px] transition-transform"></i>
+                    </button>
+
+                    <!-- DESPLEGABLE CON TOGGLES INTERACTIVOS -->
+                    <div id="dropdown-labels" class="hidden absolute right-0 top-12 w-60 glass-panel rounded-2xl p-3.5 shadow-2xl border border-indigo-500/30 flex flex-col gap-2.5 z-30">
+                        <div class="flex items-center justify-between pb-2 border-b border-slate-700/80 px-1">
+                            <span class="text-[11px] font-bold text-slate-200">Visibilidad Etiquetas</span>
+                            <button id="btn-toggle-all-labels" class="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold">Alternar Todas</button>
+                        </div>
+                        <div id="labels-checkbox-container" class="space-y-2 max-h-52 overflow-y-auto px-1 text-xs">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cronómetro -->
+            <div class="glass-panel p-3 px-5 rounded-2xl pointer-events-auto flex items-center gap-3 shadow-2xl">
+                <span id="timer-badge" class="text-xs font-black px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 flex items-center gap-1">
+                    <i class="fa-solid fa-clock"></i> <span id="lbl-timer">0:00</span> min
+                </span>
+            </div>
+        </div>
+
+        <!-- Panel Inferior -->
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-3 pointer-events-none">
+            
+            <!-- Instrucciones Dinámicas -->
+            <div class="glass-panel rounded-2xl pointer-events-auto w-full sm:w-auto sm:max-w-xs shadow-2xl overflow-hidden transition-all duration-300">
+                <button id="btn-toggle-instructions" class="w-full p-4 flex items-center justify-between gap-3 text-left hover:bg-slate-800/40 transition">
+                    <span class="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-hand-pointer"></i> Guía Manual
+                    </span>
+                    <i id="icon-chevron" class="fa-solid fa-chevron-up text-xs text-slate-400 transition-transform duration-300"></i>
+                </button>
+                
+                <div id="instructions-content" class="px-4 pb-4 transition-all duration-300">
+                    <p id="step-desc" class="text-xs font-mono text-slate-300 leading-relaxed">
+                        1. 🫗 Acerca la <b>Jarra de Agua</b> al Vaso 1 o 3 para verter.<br>
+                        2. 🎨 Acerca el <b>Colorante</b> a los vasos con agua.<br>
+                        3. 🧻 Coloca los <b>Papeles</b> para activar la capilaridad.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Panel de Estado y Personalizador de Etiquetas -->
+            <div class="glass-panel p-4 sm:p-5 rounded-2xl pointer-events-auto w-full sm:w-80 shadow-2xl space-y-3">
+                <div id="status-box" class="p-3 bg-slate-800/80 border border-slate-700 rounded-xl text-center">
+                    <span class="text-xs font-semibold text-slate-300 block">Modo Libre Interactivo</span>
+                    <span class="text-[10px] text-slate-400">Alineación de Chorro Directa Corregida</span>
+                </div>
+
+                <!-- Selector de Color Exclusivo para Etiquetas 3D -->
+                <div class="flex items-center justify-between px-1 pt-1">
+                    <span class="text-[11px] font-bold text-slate-400 flex items-center gap-1.5">
+                        <i class="fa-solid fa-palette text-indigo-400"></i> Color Etiquetas:
+                    </span>
+                    <div class="flex items-center gap-2">
+                        <div class="color-dot active bg-indigo-500" data-color="#818cf8" title="Púrpura Neón"></div>
+                        <div class="color-dot bg-cyan-400" data-color="#22d3ee" title="Cian Neón"></div>
+                        <div class="color-dot bg-emerald-400" data-color="#34d399" title="Esmeralda"></div>
+                        <div class="color-dot bg-rose-500" data-color="#f43f5e" title="Rosa neón"></div>
+                        <div class="color-dot bg-amber-400" data-color="#fbbf24" title="Ámbar"></div>
+                    </div>
+                </div>
+
+                <button id="btn-reset" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold py-2.5 rounded-xl text-xs transition flex items-center justify-center gap-2 border border-slate-700">
+                    <i class="fa-solid fa-rotate-left"></i> Reiniciar Experimento
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- BOTÓN FLOTANTE CUANDO ESTÁ MINIMIZADO -->
+    <button id="btn-expand-minimized" class="minimized-btn hidden-btn fixed top-20 right-6 z-30 glass-panel p-3 px-5 rounded-2xl border border-indigo-500/50 text-indigo-300 hover:text-white hover:bg-indigo-500/20 shadow-2xl flex items-center gap-3 text-xs font-bold active:scale-95 cursor-pointer">
+        <i class="fa-solid fa-graduation-cap text-lg text-indigo-400"></i>
+        <span>Ver Explicación Científica</span>
+    </button>
+
+    <!-- MODAL DINÁMICO DE EXPLICACIÓN CIENTÍFICA -->
+    <div id="completion-modal" class="explanation-modal hidden-modal fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+        <div class="glass-panel w-full max-w-lg p-6 sm:p-8 rounded-3xl shadow-2xl border border-indigo-500/30 relative flex flex-col gap-5">
+            
+            <div class="flex items-start justify-between gap-4">
+                <div class="flex items-center gap-3">
+                    <div class="p-3 rounded-2xl bg-gradient-to-br from-indigo-500/30 to-purple-600/30 border border-indigo-400/40 text-indigo-300">
+                        <i class="fa-solid fa-award text-3xl"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-lg sm:text-xl font-black text-white">¡Experimento Logrado!</h2>
+                        <p class="text-xs text-indigo-400 font-medium">Capilaridad y Mezcla de Colores</p>
+                    </div>
+                </div>
+                <button id="btn-minimize-modal" class="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition border border-slate-700 cursor-pointer">
+                    <i class="fa-solid fa-minus text-sm"></i>
+                </button>
+            </div>
+
+            <div class="space-y-4 bg-slate-900/70 p-4 rounded-2xl border border-slate-800 text-slate-300 text-xs sm:text-sm leading-relaxed max-h-64 overflow-y-auto">
+                <p class="font-bold text-indigo-300 text-sm flex items-center gap-2 border-b border-slate-800 pb-2">
+                    <i class="fa-solid fa-atom"></i> ¿Por qué el agua "camina" por el papel?
+                </p>
+
+                <div>
+                    <h4 class="font-semibold text-white text-xs uppercase tracking-wider text-indigo-400 mb-1">1. Acción Capilar</h4>
+                    <p class="text-slate-300 text-xs">
+                        El papel de cocina está formado por diminutas fibras de celulosa que dejan pequeños poros llamados <b>capilares</b>. El agua asciende desafiando la gravedad gracias a dos fuerzas físicas: la <b>adhesión</b> y la <b>cohesión</b>.
+                    </p>
+                </div>
+
+                <div>
+                    <h4 class="font-semibold text-white text-xs uppercase tracking-wider text-indigo-400 mb-1">2. Sifón e Equilibrio Hidrostático</h4>
+                    <p class="text-slate-300 text-xs">
+                        A medida que el agua empapa el puente de papel, viaja desde los vasos llenos hacia el vaso vacío central hasta que el nivel de agua se iguala perfectamente.
+                    </p>
+                </div>
+
+                <div>
+                    <h4 class="font-semibold text-white text-xs uppercase tracking-wider text-indigo-400 mb-1">3. Mezcla Cromática Secundaria</h4>
+                    <p class="text-slate-300 text-xs">
+                        Al transportar los pigmentos disueltos, el color <b>rojo</b> del Vaso 1 y el color <b>azul</b> del Vaso 3 se combinan en el vaso central, creando el color secundario <b>violeta</b>.
+                    </p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3 pt-1">
+                <button id="btn-close-modal" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl text-xs transition shadow-lg flex items-center justify-center gap-2 border border-indigo-400/40 active:scale-95 cursor-pointer">
+                    <i class="fa-solid fa-check"></i> Comprendido
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let scene, camera, renderer, controls;
+        let raycaster, mouse, dragPlane;
+        let draggedObject = null;
+
+        let glass1, glass2, glass3;
+        let liquid1, liquid2, liquid3;
+        
+        let pitcherGroup, pitcherWaterMesh, spoutTipNode;
+        let dyeRedGroup, dyeRedLiquid, dyeRedTipNode;
+        let dyeBlueGroup, dyeBlueLiquid, dyeBlueTipNode;
+        
+        let paperFold1, paperFold2;
+        let paperBridge1, paperBridge2;
+
+        let fluidStreamMesh; 
+        const labelSpritesList = [];
+        let allLabelsState = true;
+        let currentLabelAccentColor = '#fbbf24';
+
+        let filledVessel1 = false, filledVessel3 = false;
+        let dyedVessel1 = false, dyedVessel3 = false;
+        let paperPlaced1 = false, paperPlaced2 = false;
+
+        let pitcherWaterAmount = 1.0; 
+        let isActionAnimating = false;
+
+        let capProgress1 = 0;
+        let capProgress2 = 0;
+        let mainTimerSeconds = 0;
+        let globalTimerInterval = null;
+        let experimentCompleted = false;
+
+        // COLORES DE LÍQUIDOS ULTRA INTENSOS Y REALISTAS
+        const COLOR_GLASS = 0xffffff;
+        const COLOR_WATER = 0x0284c7; 
+        const COLOR_RED = 0xd97706; // Se ajustará a un rojo carmesí puro al mezclar
+        const COLOR_RED_INTENSE = 0xbe123c;   
+        const COLOR_BLUE_INTENSE = 0x1d4ed8;  
+        const COLOR_PURPLE_INTENSE = 0x6b21a8;
+
+        function renderLabelTexture(canvas, text, accentColor) {
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+            ctx.beginPath();
+            ctx.roundRect(10, 10, 492, 108, 28);
+            ctx.fill();
+
+            ctx.lineWidth = 6;
+            ctx.strokeStyle = accentColor || currentLabelAccentColor;
+            ctx.stroke();
+
+            ctx.fillStyle = accentColor || currentLabelAccentColor;
+            ctx.beginPath();
+            ctx.arc(45, 64, 14, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.font = 'Bold 34px Inter, system-ui, sans-serif';
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 72, 65);
+        }
+
+        function createLabelCanvas(idKey, text, defaultAccentColor) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 128;
+            
+            const accent = defaultAccentColor || currentLabelAccentColor;
+            renderLabelTexture(canvas, text, accent);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+            const sprite = new THREE.Sprite(spriteMat);
+            
+            sprite.scale.set(1.8, 0.45, 1);
+            sprite.userData = { idKey: idKey, canvas: canvas, text: text, defaultColor: accent };
+            labelSpritesList.push(sprite);
+
+            return sprite;
+        }
+
+        function createHighResPaperTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1152; canvas.height = 1152;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(0, 0, 1152, 1152);
+
+            ctx.fillStyle = '#cbd5e1';
+            for (let i = 0; i < 80000; i++) {
+                ctx.fillRect(Math.random() * 1152, Math.random() * 1152, 1.2, 1.2);
+            }
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function initScene() {
+            const container = document.getElementById('canvas-container');
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x030712);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 6.5, 10.0);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3)); 
+            
+            // Iluminación ajustada sin quemados ni brillos desmedidos
+            renderer.toneMapping = THREE.ACESFilmicToneMapping; 
+            renderer.toneMappingExposure = 0.9;
+            container.appendChild(renderer.domElement);
+
+            const ControlsConstructor = window.OrbitControls || THREE.OrbitControls;
+            if (ControlsConstructor) {
+                controls = new ControlsConstructor(camera, renderer.domElement);
+                controls.enableDamping = true;
+                controls.dampingFactor = 0.05;
+                controls.target.set(0, 0, 0);
+            }
+
+            // Sistema de iluminación tenue y focalizada
+            scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+            
+            const mainLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            mainLight.position.set(5, 10, 7);
+            scene.add(mainLight);
+
+            const fillLight = new THREE.DirectionalLight(0x38bdf8, 0.25);
+            fillLight.position.set(-5, 6, -5);
+            scene.add(fillLight);
+
+            const planeGeo = new THREE.PlaneGeometry(200, 200);
+            dragPlane = new THREE.Mesh(planeGeo, new THREE.MeshBasicMaterial({ visible: false }));
+            dragPlane.rotation.x = -Math.PI / 2;
+            dragPlane.position.y = 0.8;
+            scene.add(dragPlane);
+
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+
+            setupFluidStream();
+            buildEnvironment();
+            setupInteractions();
+            setupExplanationModalEvents();
+            setupLabelControls();
+            startGlobalTimer();
+        }
+
+        function setupLabelControls() {
+            const dropdownContainer = document.getElementById('labels-checkbox-container');
+            dropdownContainer.innerHTML = '';
+
+            labelSpritesList.forEach(sprite => {
+                const item = document.createElement('div');
+                item.className = "flex items-center justify-between text-slate-300 hover:text-white select-none py-1 cursor-pointer";
+                item.innerHTML = `
+                    <span class="truncate pr-2 font-medium">${sprite.userData.text}</span>
+                    <div class="toggle-bg relative w-9 h-5 bg-emerald-500 rounded-full flex-shrink-0 p-0.5 cursor-pointer" data-key="${sprite.userData.idKey}">
+                        <div class="toggle-dot w-4 h-4 bg-white rounded-full shadow-md transform translate-x-4"></div>
+                    </div>
+                `;
+                dropdownContainer.appendChild(item);
+            });
+
+            dropdownContainer.querySelectorAll('.toggle-bg').forEach(toggleBtn => {
+                toggleBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    const key = toggleBtn.getAttribute('data-key');
+                    const targetSprite = labelSpritesList.find(s => s.userData.idKey === key);
+                    const dot = toggleBtn.querySelector('.toggle-dot');
+
+                    if (targetSprite) {
+                        targetSprite.visible = !targetSprite.visible;
+
+                        if (targetSprite.visible) {
+                            toggleBtn.classList.remove('bg-slate-700');
+                            toggleBtn.classList.add('bg-emerald-500');
+                            dot.classList.remove('translate-x-0');
+                            dot.classList.add('translate-x-4');
+                        } else {
+                            toggleBtn.classList.remove('bg-emerald-500');
+                            toggleBtn.classList.add('bg-slate-700');
+                            dot.classList.remove('translate-x-4');
+                            dot.classList.add('translate-x-0');
+                        }
+                    }
+                };
+            });
+
+            const btnMenu = document.getElementById('btn-toggle-labels-menu');
+            const dropdown = document.getElementById('dropdown-labels');
+            const chevron = document.getElementById('icon-chevron-labels');
+
+            btnMenu.onclick = (e) => {
+                e.stopPropagation();
+                dropdown.classList.toggle('hidden');
+                chevron.classList.toggle('rotate-180');
+            };
+
+            document.addEventListener('click', (e) => {
+                if (!dropdown.contains(e.target) && !btnMenu.contains(e.target)) {
+                    dropdown.classList.add('hidden');
+                    chevron.classList.remove('rotate-180');
+                }
+            });
+
+            document.getElementById('btn-toggle-all-labels').onclick = () => {
+                allLabelsState = !allLabelsState;
+                
+                dropdownContainer.querySelectorAll('.toggle-bg').forEach(toggleBtn => {
+                    const key = toggleBtn.getAttribute('data-key');
+                    const targetSprite = labelSpritesList.find(s => s.userData.idKey === key);
+                    const dot = toggleBtn.querySelector('.toggle-dot');
+
+                    if (targetSprite) {
+                        targetSprite.visible = allLabelsState;
+
+                        if (allLabelsState) {
+                            toggleBtn.classList.remove('bg-slate-700');
+                            toggleBtn.classList.add('bg-emerald-500');
+                            dot.classList.remove('translate-x-0');
+                            dot.classList.add('translate-x-4');
+                        } else {
+                            toggleBtn.classList.remove('bg-emerald-500');
+                            toggleBtn.classList.add('bg-slate-700');
+                            dot.classList.remove('translate-x-4');
+                            dot.classList.add('translate-x-0');
+                        }
+                    }
+                });
+            };
+
+            const dots = document.querySelectorAll('.color-dot');
+            dots.forEach(dot => {
+                dot.onclick = () => {
+                    dots.forEach(d => d.classList.remove('active'));
+                    dot.classList.add('active');
+
+                    currentLabelAccentColor = dot.getAttribute('data-color');
+                    
+                    labelSpritesList.forEach(sprite => {
+                        renderLabelTexture(sprite.userData.canvas, sprite.userData.text, currentLabelAccentColor);
+                        sprite.material.map.needsUpdate = true;
+                    });
+                };
+            });
+        }
+
+        function startGlobalTimer() {
+            if (globalTimerInterval) return;
+            globalTimerInterval = setInterval(() => {
+                if (paperPlaced1 || paperPlaced2) {
+                    mainTimerSeconds++;
+                    const min = Math.floor(mainTimerSeconds / 60);
+                    const sec = Math.floor(mainTimerSeconds % 60);
+                    document.getElementById('lbl-timer').textContent = `${min}:${sec < 10 ? '0' : ''}${sec}`;
+                }
+            }, 1000);
+        }
+
+        function setupFluidStream() {
+            const geo = new THREE.CylinderGeometry(0.05, 0.03, 1.0, 32);
+            const mat = new THREE.MeshStandardMaterial({
+                color: COLOR_WATER,
+                transparent: true,
+                opacity: 0.9,
+                roughness: 0.2
+            });
+            fluidStreamMesh = new THREE.Mesh(geo, mat);
+            fluidStreamMesh.visible = false;
+            scene.add(fluidStreamMesh);
+        }
+
+        function updateFluidStream(sourceWorldPos, targetWorldPos, colorHex) {
+            fluidStreamMesh.visible = true;
+            fluidStreamMesh.material.color.setHex(colorHex);
+
+            const midPoint = new THREE.Vector3().addVectors(sourceWorldPos, targetWorldPos).multiplyScalar(0.5);
+            fluidStreamMesh.position.copy(midPoint);
+
+            const dist = sourceWorldPos.distanceTo(targetWorldPos);
+            fluidStreamMesh.scale.set(1.0 + Math.sin(Date.now() * 0.03) * 0.05, dist, 1.0 + Math.sin(Date.now() * 0.03) * 0.05);
+
+            const dir = new THREE.Vector3().subVectors(targetWorldPos, sourceWorldPos).normalize();
+            const alignQuaternion = new THREE.Quaternion();
+            alignQuaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), dir);
+            fluidStreamMesh.quaternion.copy(alignQuaternion);
+        }
+
+        function hideFluidStream() {
+            fluidStreamMesh.visible = false;
+        }
+
+        function createGlassMesh(idKey, labelText) {
+            const group = new THREE.Group();
+
+            const glassMat = new THREE.MeshPhysicalMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.3,
+                roughness: 0.1,
+                metalness: 0.1,
+                transmission: 0.9,
+                thickness: 0.5,
+                ior: 1.45
+            });
+
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.75, 2.2, 48, 1, true), glassMat);
+            body.position.y = 1.1;
+
+            const rimMat = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, roughness: 0.2 });
+            const rim = new THREE.Mesh(new THREE.TorusGeometry(0.9, 0.03, 24, 48), rimMat);
+            rim.rotation.x = Math.PI / 2;
+            rim.position.y = 2.2;
+
+            const base = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 0.1, 48), glassMat);
+            base.position.y = 0.05;
+
+            const label = createLabelCanvas(idKey, labelText);
+            label.position.set(0, 2.7, 0);
+
+            group.add(body, rim, base, label);
+            return group;
+        }
+
+        function createLiquidMesh(colorHex) {
+            // Material con color denso e intenso
+            const mat = new THREE.MeshStandardMaterial({
+                color: colorHex,
+                transparent: true,
+                opacity: 0.92,
+                roughness: 0.2,
+                metalness: 0.05
+            });
+
+            const geo = new THREE.CylinderGeometry(0.82, 0.72, 1, 48);
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.scale.set(1, 0.001, 1);
+            mesh.position.y = 0.1;
+            return mesh;
+        }
+
+        function createRealWaterPitcher() {
+            const group = new THREE.Group();
+
+            const glassMat = new THREE.MeshPhysicalMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.3,
+                roughness: 0.1,
+                transmission: 0.88,
+                ior: 1.45
+            });
+
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.85, 1.6, 48), glassMat);
+            body.position.y = 0.8;
+
+            const spoutGeo = new THREE.ConeGeometry(0.3, 0.4, 24);
+            spoutGeo.rotateZ(-Math.PI / 3);
+            const spout = new THREE.Mesh(spoutGeo, glassMat);
+            spout.position.set(-0.6, 1.5, 0);
+
+            spoutTipNode = new THREE.Object3D();
+            spoutTipNode.position.set(-0.72, 1.55, 0);
+
+            const handleGeo = new THREE.TorusGeometry(0.5, 0.07, 24, 48, Math.PI);
+            const handle = new THREE.Mesh(handleGeo, glassMat);
+            handle.position.set(0.7, 0.8, 0);
+            handle.rotation.z = -Math.PI / 2;
+
+            pitcherWaterMesh = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.6, 0.8, 1.3, 48),
+                new THREE.MeshStandardMaterial({ color: COLOR_WATER, transparent: true, opacity: 0.9, roughness: 0.2 })
+            );
+            pitcherWaterMesh.position.y = 0.7;
+
+            const pitcherLabel = createLabelCanvas("pitcher", "JARRA DE AGUA");
+            pitcherLabel.position.set(0, 2.0, 0);
+
+            group.add(body, spout, spoutTipNode, handle, pitcherWaterMesh, pitcherLabel);
+            return group;
+        }
+
+        function createRealPaperBridge(startX, endX) {
+            const midX = (startX + endX) / 2;
+            const curve = new THREE.CatmullRomCurve3([
+                new THREE.Vector3(startX, 0.35, 0),
+                new THREE.Vector3(startX, 2.25, 0),
+                new THREE.Vector3(midX, 2.40, 0),
+                new THREE.Vector3(endX, 2.25, 0),
+                new THREE.Vector3(endX, 0.35, 0)
+            ]);
+
+            const geo = new THREE.PlaneGeometry(0.38, 1, 1, 60);
+            const paperTex = createHighResPaperTexture();
+            const mat = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                map: paperTex,
+                roughness: 0.8,
+                side: THREE.DoubleSide
+            });
+
+            const mesh = new THREE.Mesh(geo, mat);
+            const pos = geo.attributes.position;
+            for (let i = 0; i < pos.count; i++) {
+                const u = pos.getY(i) + 0.5;
+                const pt = curve.getPoint(u);
+                pos.setXYZ(i, pt.x, pt.y, pt.z + (pos.getX(i)));
+            }
+            geo.computeVertexNormals();
+            return mesh;
+        }
+
+        function buildEnvironment() {
+            // Mesa con textura oscura realista
+            const tableMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.6, metalness: 0.1 });
+            const table = new THREE.Mesh(new THREE.CylinderGeometry(8.5, 8.5, 0.3, 96), tableMat);
+            table.position.y = -0.15;
+            scene.add(table);
+
+            glass1 = createGlassMesh("vessel1", "VASO 1"); glass1.position.set(-2.4, 0, 0);
+            glass2 = createGlassMesh("vessel2", "VASO 2 (MEZCLA)"); glass2.position.set(0, 0, 0);
+            glass3 = createGlassMesh("vessel3", "VASO 3"); glass3.position.set(2.4, 0, 0);
+            scene.add(glass1, glass2, glass3);
+
+            liquid1 = createLiquidMesh(COLOR_WATER); liquid1.position.x = -2.4;
+            liquid2 = createLiquidMesh(COLOR_PURPLE_INTENSE); liquid2.position.x = 0;
+            liquid3 = createLiquidMesh(COLOR_WATER); liquid3.position.x = 2.4;
+            scene.add(liquid1, liquid2, liquid3);
+
+            pitcherGroup = createRealWaterPitcher();
+            pitcherGroup.position.set(-4.5, 0.1, 1.2);
+            pitcherGroup.userData = { isDraggable: true, type: 'pitcher' };
+            scene.add(pitcherGroup);
+
+            // Tinte Rojo
+            dyeRedGroup = new THREE.Group();
+            const bR = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.8, 24), new THREE.MeshPhysicalMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, roughness: 0.1 }));
+            dyeRedLiquid = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.6, 24), new THREE.MeshStandardMaterial({ color: COLOR_RED_INTENSE, roughness: 0.2 }));
+            dyeRedTipNode = new THREE.Object3D();
+            dyeRedTipNode.position.set(0, -0.4, 0);
+            
+            const dyeRedLabel = createLabelCanvas("dyeRed", "TINTE ROJO");
+            dyeRedLabel.position.set(0, 0.9, 0);
+
+            dyeRedGroup.add(bR, dyeRedLiquid, dyeRedTipNode, dyeRedLabel);
+            dyeRedGroup.position.set(-2.0, 0.35, 2.0);
+            dyeRedGroup.userData = { isDraggable: true, type: 'dyeRed' };
+            scene.add(dyeRedGroup);
+
+            // Tinte Azul
+            dyeBlueGroup = new THREE.Group();
+            const bB = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.8, 24), new THREE.MeshPhysicalMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, roughness: 0.1 }));
+            dyeBlueLiquid = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.6, 24), new THREE.MeshStandardMaterial({ color: COLOR_BLUE_INTENSE, roughness: 0.2 }));
+            dyeBlueTipNode = new THREE.Object3D();
+            dyeBlueTipNode.position.set(0, -0.4, 0);
+
+            const dyeBlueLabel = createLabelCanvas("dyeBlue", "TINTE AZUL");
+            dyeBlueLabel.position.set(0, 0.9, 0);
+
+            dyeBlueGroup.add(bB, dyeBlueLiquid, dyeBlueTipNode, dyeBlueLabel);
+            dyeBlueGroup.position.set(2.0, 0.35, 2.0);
+            dyeBlueGroup.userData = { isDraggable: true, type: 'dyeBlue' };
+            scene.add(dyeBlueGroup);
+
+            const pGeo = new THREE.BoxGeometry(0.7, 0.25, 1.8);
+            const pMat = new THREE.MeshStandardMaterial({ color: 0xffffff, map: createHighResPaperTexture(), roughness: 0.8 });
+
+            paperFold1 = new THREE.Mesh(pGeo, pMat);
+            paperFold1.position.set(-1.1, 0.15, 1.8);
+            paperFold1.userData = { isDraggable: true, type: 'paper1' };
+
+            const paperLabel1 = createLabelCanvas("paper1", "PUENTE DE PAPEL 1");
+            paperLabel1.position.set(0, 0.6, 0);
+            paperFold1.add(paperLabel1);
+
+            paperFold2 = new THREE.Mesh(pGeo, pMat);
+            paperFold2.position.set(1.1, 0.15, 1.8);
+            paperFold2.userData = { isDraggable: true, type: 'paper2' };
+
+            const paperLabel2 = createLabelCanvas("paper2", "PUENTE DE PAPEL 2");
+            paperLabel2.position.set(0, 0.6, 0);
+            paperFold2.add(paperLabel2);
+
+            scene.add(paperFold1, paperFold2);
+        }
+
+        function showExplanationModal() {
+            const modal = document.getElementById('completion-modal');
+            const minimizedBtn = document.getElementById('btn-expand-minimized');
+            modal.classList.remove('hidden-modal');
+            modal.classList.add('visible-modal');
+
+            minimizedBtn.classList.remove('visible-btn');
+            minimizedBtn.classList.add('hidden-btn');
+        }
+
+        function minimizeExplanationModal() {
+            const modal = document.getElementById('completion-modal');
+            const minimizedBtn = document.getElementById('btn-expand-minimized');
+            modal.classList.remove('visible-modal');
+            modal.classList.add('hidden-modal');
+
+            minimizedBtn.classList.remove('hidden-btn');
+            minimizedBtn.classList.add('visible-btn');
+        }
+
+        function setupExplanationModalEvents() {
+            document.getElementById('btn-minimize-modal').onclick = minimizeExplanationModal;
+            document.getElementById('btn-close-modal').onclick = minimizeExplanationModal;
+            document.getElementById('btn-expand-minimized').onclick = showExplanationModal;
+        }
+
+        function triggerAutomaticPouring(targetGlass, targetLiquid, isV1) {
+            if (isActionAnimating) return;
+            isActionAnimating = true;
+            draggedObject = null;
+            if (controls) controls.enabled = false;
+
+            const targetX = targetGlass.position.x;
+            pitcherGroup.position.set(targetX + 0.65, 2.3, targetGlass.position.z);
+            pitcherGroup.rotation.z = Math.PI / 3.5;
+
+            let fillProgress = targetLiquid.scale.y;
+            const startWaterAmount = pitcherWaterAmount;
+
+            const pourAnim = setInterval(() => {
+                fillProgress += 0.01;
+                const newScale = Math.min(1.2, fillProgress);
+                
+                targetLiquid.scale.y = newScale;
+                targetLiquid.position.y = newScale / 2 + 0.1;
+
+                pitcherWaterAmount = Math.max(0, startWaterAmount - ((newScale / 1.2) * 0.5));
+                pitcherWaterMesh.scale.y = pitcherWaterAmount;
+                pitcherWaterMesh.position.y = 0.7 * pitcherWaterAmount;
+
+                if (pitcherWaterAmount <= 0.01) {
+                    pitcherWaterMesh.visible = false;
+                }
+
+                const vol = Math.round((newScale / 1.2) * 150);
+                if (isV1) document.getElementById('vol-1').textContent = `${vol} ml`;
+                else document.getElementById('vol-3').textContent = `${vol} ml`;
+
+                const spoutWorldPos = new THREE.Vector3();
+                spoutTipNode.getWorldPosition(spoutWorldPos);
+
+                const currentSurfaceY = targetLiquid.position.y + (targetLiquid.scale.y / 2);
+                const targetSurfacePos = new THREE.Vector3(targetGlass.position.x, currentSurfaceY, targetGlass.position.z);
+                
+                updateFluidStream(spoutWorldPos, targetSurfacePos, COLOR_WATER);
+
+                if (newScale >= 1.2) {
+                    clearInterval(pourAnim);
+                    hideFluidStream();
+
+                    pitcherGroup.rotation.z = 0;
+                    pitcherGroup.position.set(-4.5, 0.1, 1.2);
+                    isActionAnimating = false;
+                    if (controls) controls.enabled = true;
+
+                    if (isV1) {
+                        filledVessel1 = true;
+                        document.getElementById('vol-1').textContent = "150 ml";
+                        document.getElementById('color-1-lbl').textContent = "Agua Clara";
+                    } else {
+                        filledVessel3 = true;
+                        document.getElementById('vol-3').textContent = "150 ml";
+                        document.getElementById('color-3-lbl').textContent = "Agua Clara";
+                    }
+
+                    if (pitcherWaterAmount <= 0.01) {
+                        pitcherWaterMesh.visible = false;
+                    }
+                }
+            }, 20);
+        }
+
+        function triggerAutomaticDyePouring(targetGlass, targetLiquid, colorHex, isRed) {
+            if (isActionAnimating) return;
+            isActionAnimating = true;
+            draggedObject = null;
+            if (controls) controls.enabled = false;
+
+            const dyeObj = isRed ? dyeRedGroup : dyeBlueGroup;
+            const dyeLiquid = isRed ? dyeRedLiquid : dyeBlueLiquid;
+            const tipNode = isRed ? dyeRedTipNode : dyeBlueTipNode;
+            
+            dyeObj.position.set(targetGlass.position.x + 0.4, 2.2, targetGlass.position.z);
+            dyeObj.rotation.z = Math.PI / 4;
+
+            let dyeProgress = 0;
+
+            const dyeAnim = setInterval(() => {
+                dyeProgress += 0.018; 
+                
+                const oldScale = dyeLiquid.scale.y;
+                const newScaleDye = Math.max(0.01, oldScale - 0.01);
+                dyeLiquid.scale.y = newScaleDye;
+                dyeLiquid.position.y -= (oldScale - newScaleDye) * 0.3;
+
+                const tipWorldPos = new THREE.Vector3();
+                tipNode.getWorldPosition(tipWorldPos);
+
+                const currentSurfaceY = targetLiquid.position.y + (targetLiquid.scale.y / 2);
+                const targetSurfacePos = new THREE.Vector3(targetGlass.position.x, currentSurfaceY, targetGlass.position.z);
+                
+                updateFluidStream(tipWorldPos, targetSurfacePos, colorHex);
+
+                targetLiquid.material.color.lerp(new THREE.Color(colorHex), 0.08);
+
+                if (dyeProgress >= 1.0) {
+                    clearInterval(dyeAnim);
+                    hideFluidStream();
+                    dyeLiquid.visible = false;
+                    dyeObj.rotation.z = 0;
+                    dyeObj.position.set(isRed ? -2.0 : 2.0, 0.35, 2.0);
+                    isActionAnimating = false;
+                    if (controls) controls.enabled = true;
+
+                    if (isRed) {
+                        dyedVessel1 = true;
+                        targetLiquid.material.color.setHex(COLOR_RED_INTENSE);
+                        document.getElementById('color-1-lbl').textContent = "Rojo Intensificado";
+                        document.getElementById('color-1-lbl').className = "text-[9px] text-rose-400 font-bold block";
+                    } else {
+                        dyedVessel3 = true;
+                        targetLiquid.material.color.setHex(COLOR_BLUE_INTENSE);
+                        document.getElementById('color-3-lbl').textContent = "Azul Intensificado";
+                        document.getElementById('color-3-lbl').className = "text-[9px] text-blue-400 font-bold block";
+                    }
+                }
+            }, 20);
+        }
+
+        function updateSlowCapillarity() {
+            if (!paperPlaced1 && !paperPlaced2) return;
+
+            document.getElementById('status-box').innerHTML = '<span class="text-xs font-semibold text-emerald-400 block">Capilaridad Lenta Activa</span><span class="text-[10px] text-slate-300">El líquido asciende por los poros...</span>';
+
+            if (paperPlaced1 && capProgress1 < 100) {
+                capProgress1 += 0.12; 
+                if (paperBridge1) {
+                    paperBridge1.material.color.lerp(new THREE.Color(COLOR_RED_INTENSE), 0.02);
+                }
+            }
+
+            if (paperPlaced2 && capProgress2 < 100) {
+                capProgress2 += 0.12; 
+                if (paperBridge2) {
+                    paperBridge2.material.color.lerp(new THREE.Color(COLOR_BLUE_INTENSE), 0.02);
+                }
+            }
+
+            const ratio1 = capProgress1 / 100;
+            const ratio2 = capProgress2 / 100;
+            const combinedVolRatio = (ratio1 + ratio2) / 2;
+
+            const hCenter = 0.8 * combinedVolRatio;
+            liquid2.scale.y = Math.max(0.001, hCenter);
+            liquid2.position.y = hCenter / 2 + 0.1;
+
+            const volCenter = Math.round(100 * combinedVolRatio);
+            document.getElementById('vol-2').textContent = `${volCenter} ml`;
+
+            const h1 = 1.2 - (0.4 * ratio1);
+            liquid1.scale.y = h1; liquid1.position.y = h1 / 2 + 0.1;
+            document.getElementById('vol-1').textContent = `${Math.round(150 - (50 * ratio1))} ml`;
+
+            const h3 = 1.2 - (0.4 * ratio2);
+            liquid3.scale.y = h3; liquid3.position.y = h3 / 2 + 0.1;
+            document.getElementById('vol-3').textContent = `${Math.round(150 - (50 * ratio2))} ml`;
+
+            if (paperPlaced1 && paperPlaced2) {
+                liquid2.material.color.lerp(new THREE.Color(COLOR_PURPLE_INTENSE), 0.03);
+                document.getElementById('color-2-lbl').textContent = "Mezcla Violeta";
+                document.getElementById('color-2-lbl').className = "text-[9px] text-purple-400 font-bold block";
+
+                if (paperBridge1) paperBridge1.material.color.lerp(new THREE.Color(COLOR_PURPLE_INTENSE), 0.015);
+                if (paperBridge2) paperBridge2.material.color.lerp(new THREE.Color(COLOR_PURPLE_INTENSE), 0.015);
+            } else if (paperPlaced1) {
+                liquid2.material.color.lerp(new THREE.Color(COLOR_RED_INTENSE), 0.03);
+                document.getElementById('color-2-lbl').textContent = "Tinte Rojo";
+                document.getElementById('color-2-lbl').className = "text-[9px] text-rose-400 font-bold block";
+            } else if (paperPlaced2) {
+                liquid2.material.color.lerp(new THREE.Color(COLOR_BLUE_INTENSE), 0.03);
+                document.getElementById('color-2-lbl').textContent = "Tinte Azul";
+                document.getElementById('color-2-lbl').className = "text-[9px] text-blue-400 font-bold block";
+            }
+
+            if (capProgress1 >= 100 && capProgress2 >= 100 && !experimentCompleted) {
+                experimentCompleted = true;
+                document.getElementById('status-box').innerHTML = '<span class="text-xs font-bold text-indigo-400 block">¡Equilibrio Capilar Logrado!</span><span class="text-[10px] text-slate-300">Niveles igualados al 100%</span>';
+                
+                setTimeout(() => {
+                    showExplanationModal();
+                }, 2500);
+            }
+        }
+
+        function animatePaperPlacement(startX, endX, onComplete) {
+            const bridgeMesh = createRealPaperBridge(startX, endX);
+            bridgeMesh.scale.set(0.01, 0.01, 0.01);
+            bridgeMesh.position.y = 0.8;
+            scene.add(bridgeMesh);
+
+            let progress = 0;
+            const anim = setInterval(() => {
+                progress += 0.05;
+                const scaleVal = Math.min(1.0, progress);
+                bridgeMesh.scale.set(scaleVal, scaleVal, scaleVal);
+                bridgeMesh.position.y = 0.8 * (1 - scaleVal);
+
+                if (progress >= 1.0) {
+                    clearInterval(anim);
+                    if (onComplete) onComplete(bridgeMesh);
+                }
+            }, 20);
+        }
+
+        function setupInteractions() {
+            const canvas = renderer.domElement;
+
+            function updatePointer(e) {
+                const rect = canvas.getBoundingClientRect();
+                mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+            }
+
+            canvas.addEventListener('pointerdown', (e) => {
+                if (isActionAnimating) return;
+                updatePointer(e);
+                raycaster.setFromCamera(mouse, camera);
+
+                const draggables = [pitcherGroup, dyeRedGroup, dyeBlueGroup, paperFold1, paperFold2];
+                const intersects = raycaster.intersectObjects(draggables, true);
+
+                if (intersects.length > 0) {
+                    let obj = intersects[0].object;
+                    while (obj && !obj.userData.isDraggable) obj = obj.parent;
+
+                    if (obj && obj.userData.isDraggable) {
+                        draggedObject = obj;
+                        if (controls) controls.enabled = false;
+                    }
+                }
+            });
+
+            canvas.addEventListener('pointermove', (e) => {
+                if (!draggedObject || isActionAnimating) return;
+                updatePointer(e);
+                raycaster.setFromCamera(mouse, camera);
+
+                const hits = raycaster.intersectObject(dragPlane);
+                if (hits.length > 0) {
+                    const pt = hits[0].point;
+                    const type = draggedObject.userData.type;
+
+                    draggedObject.position.set(
+                        Math.max(-5, Math.min(5, pt.x)),
+                        Math.max(1.0, Math.min(3.5, pt.y + 0.3)),
+                        Math.max(-3, Math.min(3, pt.z))
+                    );
+
+                    if (type === 'pitcher') {
+                        if (draggedObject.position.distanceTo(glass1.position) < 2.2 && !filledVessel1) {
+                            triggerAutomaticPouring(glass1, liquid1, true);
+                        } else if (draggedObject.position.distanceTo(glass3.position) < 2.2 && !filledVessel3) {
+                            triggerAutomaticPouring(glass3, liquid3, false);
+                        }
+                    }
+
+                    if (type === 'dyeRed') {
+                        if (draggedObject.position.distanceTo(glass1.position) < 2.2 && filledVessel1 && !dyedVessel1) {
+                            triggerAutomaticDyePouring(glass1, liquid1, COLOR_RED_INTENSE, true);
+                        }
+                    }
+
+                    if (type === 'dyeBlue') {
+                        if (draggedObject.position.distanceTo(glass3.position) < 2.2 && filledVessel3 && !dyedVessel3) {
+                            triggerAutomaticDyePouring(glass3, liquid3, COLOR_BLUE_INTENSE, false);
+                        }
+                    }
+                }
+            });
+
+            const release = () => {
+                if (draggedObject && !isActionAnimating) {
+                    const type = draggedObject.userData.type;
+
+                    if (type === 'pitcher') pitcherGroup.position.set(-4.5, 0.1, 1.2);
+                    if (type === 'dyeRed') dyeRedGroup.position.set(-2.0, 0.35, 2.0);
+                    if (type === 'dyeBlue') dyeBlueGroup.position.set(2.0, 0.35, 2.0);
+
+                    if (type === 'paper1') {
+                        if (draggedObject.position.distanceTo(new THREE.Vector3(-1.2, 0, 0)) < 2.5 && dyedVessel1 && !paperPlaced1) {
+                            paperPlaced1 = true;
+                            scene.remove(paperFold1);
+                            animatePaperPlacement(-2.4, -0.5, (mesh) => { paperBridge1 = mesh; });
+                        } else {
+                            paperFold1.position.set(-1.1, 0.15, 1.8);
+                        }
+                    }
+
+                    if (type === 'paper2') {
+                        if (draggedObject.position.distanceTo(new THREE.Vector3(1.2, 0, 0)) < 2.5 && dyedVessel3 && !paperPlaced2) {
+                            paperPlaced2 = true;
+                            scene.remove(paperFold2);
+                            animatePaperPlacement(2.4, 0.5, (mesh) => { paperBridge2 = mesh; });
+                        } else {
+                            paperFold2.position.set(1.1, 0.15, 1.8);
+                        }
+                    }
+
+                    draggedObject = null;
+                }
+                if (controls && !isActionAnimating) controls.enabled = true;
+            };
+
+            canvas.addEventListener('pointerup', release);
+            canvas.addEventListener('pointercancel', release);
+
+            document.getElementById('btn-reset').onclick = () => location.reload();
+
+            const btnInstructions = document.getElementById('btn-toggle-instructions');
+            const contentInstructions = document.getElementById('instructions-content');
+            const iconChevron = document.getElementById('icon-chevron');
+            let isOpen = window.innerWidth >= 640;
+
+            if (!isOpen) {
+                contentInstructions.style.display = 'none';
+                iconChevron.classList.add('rotate-180');
+            }
+
+            btnInstructions.onclick = () => {
+                isOpen = !isOpen;
+                contentInstructions.style.display = isOpen ? 'block' : 'none';
+                iconChevron.classList.toggle('rotate-180', !isOpen);
+            };
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function renderLoop() {
+            requestAnimationFrame(renderLoop);
+            updateSlowCapillarity();
+            if (controls) controls.update();
+            renderer.render(scene, camera);
+        }
+
+        window.onload = () => {
+            initScene();
+            window.addEventListener('resize', onWindowResize);
+            renderLoop();
+        };
+    </script>
+</body>
+</html>
